@@ -1,0 +1,324 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+//users model
+model User {
+  id                     String    @id @default(uuid())
+  username               String    @unique
+  email                  String    @unique
+  password               String? // Optional because of conditional requirement
+  pendingEmail           String? // temporarily store the new email
+  emailChangeToken       String? // verification token
+  emailChangeTokenExpiry DateTime? // token expiry
+  emailChangeRequestedAt DateTime? // ← add this field
+
+  reviews                    Review[]
+  resetToken                 String?
+  role                       Role           @default(customer)
+  favorites                  Favorite[]     @relation("UserFavorites")
+  address                    Address?
+  status                     Status         @default(active)
+  authProvider               AuthProvider
+  profilePic                 String?        @default("")
+  phone                      String?
+  profilePicPublicId         String?
+  verified                   Boolean        @default(false)
+  products                   Product[]      @relation("UserProducts")
+  orders                     Order[]
+  notifications              Notification[] // 1 user can have many notifications
+  sentMessages               Message[]      @relation("SentMessages")
+  receivedMessages           Message[]      @relation("ReceivedMessages")
+  verificationTokenCreatedAt DateTime?
+  verificationTokenExpires   DateTime?
+  verificationToken          String?
+  refreshToken               RefreshToken[] // relation to tokens
+  cartItems                  CartItem[]
+
+  googleId  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([emailChangeToken])
+  @@index([resetToken])
+  @@index([verificationToken])
+  @@map("users") // optional, maps to SQL table name "users"
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String // must match User.id type
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String // must match Product.id type
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int
+  text      String
+  createdAt DateTime @default(now())
+  userId    String
+  productId String
+
+  user    User    @relation(fields: [userId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([userId, productId]) // prevent duplicate reviews
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+//product model
+model Product {
+  id               String         @id @default(uuid())
+  productName      String
+  description      String         @default("")
+  tags             String[]       @default(["General"])
+  category         String         @default("General")
+  images           ProductImage[]
+  priceInKobo      Int
+  quantity         Int            @default(1)
+  stock            Int
+  rating           Float          @default(0.0)
+  isPopular        Boolean        @default(false)
+  popularAt        DateTime?
+  unitType         String         @default("piece")
+  isVariableWeight Boolean        @default(false)
+  minOrderQuantity Float?
+  createdById      String
+  createdBy        User           @relation("UserProducts", fields: [createdById], references: [id])
+  favorites        Favorite[]     @relation("ProductFavorites")
+  reviews          Review[] // ✅ add this line
+  discountId       String?
+  displayLabel     DisplayLabel   @default(NONE)
+  discount         Discount?      @relation(fields: [discountId], references: [id])
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  dailyDeals       DailyDeal[]
+  cartItems        CartItem[]
+}
+
+enum DisplayLabel {
+  NONE
+  POPULAR
+  DAILY_DEAL
+  NEW_ARRIVAL
+  FEATURED
+}
+
+model Discount {
+  id        String       @id @default(uuid())
+  type      DiscountType
+  value     Float
+  label     String?
+  isActive  Boolean      @default(true)
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime     @default(now())
+  products  Product[]
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model DailyDeal {
+  id        Int      @id @default(autoincrement())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  dealDate  DateTime @default(now())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Favorite {
+  id String @id @default(uuid())
+
+  user   User   @relation("UserFavorites", fields: [userId], references: [id])
+  userId String
+
+  product   Product @relation("ProductFavorites", fields: [productId], references: [id])
+  productId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId], name: "user_product_unique")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  url       String
+  publicId  String
+  index     Int // Optional: helps track order
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Address {
+  id         String  @id @default(cuid())
+  fullName   String
+  email      String?
+  state      String
+  city       String
+  address    String
+  landmark   String?
+  postalCode String?
+  user       User    @relation(fields: [userId], references: [id])
+  userId     String  @unique
+}
+
+enum Role {
+  admin
+  moderator
+  customer
+}
+
+enum Status {
+  active
+  inactive
+  banned
+}
+
+enum AuthProvider {
+  local
+  google
+}
+
+enum OrderStatus {
+  pending
+  paid
+  cancelled
+  failed
+  refunded
+}
+
+enum FulfillmentStatus {
+  Processing
+  Shipped
+  OutForDelivery
+  Delivered
+}
+
+model PhoneOtp {
+  id        String   @id @default(uuid())
+  userId    String
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([phone])
+}
+
+//order model
+model Order {
+  id                  String            @id @default(uuid())
+  tx_ref              String            @unique
+  trackingId          String            @unique
+  userId              String
+  user                User              @relation(fields: [userId], references: [id])
+  items               Json
+  name                String
+  email               String
+  phone               String?
+  address             String
+  state               String? // new
+  city                String? // new
+  postalCode          String? // new
+  landmark            String? // new
+  pickupStation       String? // new
+  extraInstructions   String? // new
+  amount              Int
+  subtotal            Int
+  taxAmount           Int
+  taxRate             Float
+  shippingFee         Int
+  total               Int
+  deliveryType        String
+  status              OrderStatus       @default(pending)
+  fulfillmentStatus   FulfillmentStatus @default(Processing)
+  deliveryProvider    String?
+  deliveryTrackingUrl String?
+  createdAt           DateTime          @default(now())
+}
+
+model ShippingRate {
+  id        Int      @id @default(autoincrement())
+  state     String
+  city      String
+  fee       Int
+  method    String   @default("standard")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([state, city, method])
+}
+
+enum NotificationType {
+  ORDER
+  PROMO
+  ALERT
+  SYSTEM
+  MESSAGE
+}
+
+//notification model
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  title     String?
+  message   String?
+  type      NotificationType
+  read      Boolean          @default(false)
+  seen      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+//message model
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  text       String?
+  images     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AdminAlert {
+  id          String   @id @default(uuid())
+  type        String // e.g., "stock_alert", "system_error"
+  message     String
+  relatedItem String? // e.g., productId or orderId
+  createdAt   DateTime @default(now())
+  read        Boolean  @default(false)
+}
+
+//npx prisma format
+//npx prisma generate
+//npx prisma migrate dev --name update-authProvider-enum 
