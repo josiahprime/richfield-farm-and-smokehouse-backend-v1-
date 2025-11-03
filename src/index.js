@@ -36,6 +36,7 @@ const allowedOrigins =
   'http://10.107.16.161:3000',
   'http://10.102.252.161:3000',
   'http://10.107.16.161:3000',
+  'https://richfield-farm-and-smokehouse-backend-v1.onrender.com/',
 ];
 
 
