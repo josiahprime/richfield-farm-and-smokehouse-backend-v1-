@@ -16,5 +16,5 @@ export const setCookie = (res, name, value, options = {}) => {
 };
 
 export const clearCookie = (res, name) => {
-  res.clearCookie(name, {COOKIE_OPTIONS, maxAge: 0 });
+  res.clearCookie(name, {...COOKIE_OPTIONS, maxAge: 0 });
 };

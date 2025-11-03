@@ -85,6 +85,7 @@ if (process.env.NODE_ENV === 'production') {
 // app.use('/api/auth', authRoutes);
 app.use('/api/auth', (req, res, next) => {
     console.log(`📢 Request received at /api/auth: ${req.method} ${req.url}`);
+    console.log("📡 Cookies:", req.cookies);
     next();
 }, authRoutes);
 
