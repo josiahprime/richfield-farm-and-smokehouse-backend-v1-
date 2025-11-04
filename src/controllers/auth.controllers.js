@@ -813,6 +813,7 @@ export const verifySession = async (req, res) => {
     if (!accessToken) {
       console.log('no access token trying headers')
       const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+      console.log('autheader from /verify', authHeader)
       if (authHeader && authHeader.startsWith('Bearer ')) {
         accessToken = authHeader.slice(7); // Remove "Bearer " prefix
       }
