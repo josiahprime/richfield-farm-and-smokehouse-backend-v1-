@@ -806,10 +806,19 @@ export const getToken = (req, res) => {
 
 export const verifySession = async (req, res) => {
   try {
-    const accessToken = req.cookies.jwt;
-    console.log("🍪 Incoming cookies:", req.headers.cookie);
+    // 1️⃣ Check for token in cookies first
+    let accessToken = req.cookies?.jwt;
 
+    // 2️⃣ If not in cookies, check Authorization header (Bearer token)
+    if (!accessToken) {
+      console.log('no access token trying headers')
+      const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        accessToken = authHeader.slice(7); // Remove "Bearer " prefix
+      }
+    }
 
+    // 3️⃣ If still missing, reject
     if (!accessToken) {
       return res.status(401).json({
         valid: false,
@@ -818,7 +827,7 @@ export const verifySession = async (req, res) => {
       });
     }
 
-    // ✅ Verify JWT integrity
+    // ✅ Verify JWT
     const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
 
     // ✅ Optional: fetch minimal user info
@@ -835,7 +844,7 @@ export const verifySession = async (req, res) => {
       });
     }
 
-    // ✅ Return structured response for frontend or middleware
+    // ✅ Return structured response
     return res.status(200).json({
       valid: true,
       user: {
@@ -849,9 +858,6 @@ export const verifySession = async (req, res) => {
   } catch (error) {
     console.error("Session verification failed:", error.message);
 
-    console.log('error.name from verify',error.name)
-
-    // Decide reason based on the error type
     let reason = "invalid";
     if (error.name === "TokenExpiredError") reason = "expired";
 
