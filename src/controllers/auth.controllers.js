@@ -236,80 +236,133 @@ export const verifyEmailSignup = async (req, res) => {
 
 
 
-
-
 export const login = async (req, res) => {
-  console.log('we reached here')
-  const { email, password } = req.body;
-  // console.log(req.body)
+  console.log("we reached login endpoint");
 
+  const { email, password } = req.body;
+
+  // Validate input
   const { error } = loginSchema.validate({ email, password });
   if (error) return res.status(400).json({ message: error.details[0].message });
 
   try {
-    // const user = await User.findOne({ email });
+    // Find user in DB
     const user = await prisma.user.findUnique({ where: { email } });
-    console.log('user from login controller', user)
-
     if (!user) {
       logger.warn(`Login failed: no user found for email ${email}`);
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    if (!user.verified) {
-      return res.status(403).json({ message: 'Please verify your email before logging in.' });
-    }
-
-    if (!password || !user.password) {
-      logger.error("Missing password or hash during login", { email });
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    const isMatch = await comparePasswords(password, user.password);
+    if (!user.verified) {
+      return res.status(403).json({ message: "Please verify your email before logging in." });
+    }
 
+    // Check password
+    const isMatch = await comparePasswords(password, user.password);
     if (!isMatch) {
       logger.warn(`Login failed: incorrect password for ${email}`);
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
+    // Generate tokens
     const { accessToken, refreshToken } = await generateToken(user.id, user.role);
 
-    // ✅ Use your centralized cookie utility
-    setCookie(res, "jwt", accessToken, { maxAge: 15 * 60 * 1000 }); // 15 min
+    // ✅ Only set refresh token in HttpOnly cookie
     setCookie(res, "refreshToken", refreshToken, { maxAge: 7 * 24 * 60 * 60 * 1000 }); // 7 days
-
-    // Log what cookies will be sent
-    console.log("🍪 Set-Cookie headers:", res.getHeader("Set-Cookie"));
-
 
     logger.info(`User ${user.email} logged in successfully.`);
 
-    
-
+    // ✅ Send accessToken in JSON to be stored in memory on frontend
     res.status(200).json({
       message: "Login successful",
+      accessToken, // <— store in memory (Zustand / React state)
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
         profilePic: user.profilePic,
         verified: user.verified,
+        role: user.role,
       },
     });
-
   } catch (error) {
-    logger.error('Login error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    logger.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
+
+// export const login = async (req, res) => {
+//   console.log('we reached here')
+//   const { email, password } = req.body;
+//   // console.log(req.body)
+
+//   const { error } = loginSchema.validate({ email, password });
+//   if (error) return res.status(400).json({ message: error.details[0].message });
+
+//   try {
+//     // const user = await User.findOne({ email });
+//     const user = await prisma.user.findUnique({ where: { email } });
+//     console.log('user from login controller', user)
+
+//     if (!user) {
+//       logger.warn(`Login failed: no user found for email ${email}`);
+//       return res.status(400).json({ message: 'Invalid credentials' });
+//     }
+
+//     if (!user) {
+//       return res.status(400).json({ message: 'Invalid credentials' });
+//     }
+
+//     if (!user.verified) {
+//       return res.status(403).json({ message: 'Please verify your email before logging in.' });
+//     }
+
+//     if (!password || !user.password) {
+//       logger.error("Missing password or hash during login", { email });
+//       return res.status(400).json({ message: "Invalid credentials" });
+//     }
+
+//     const isMatch = await comparePasswords(password, user.password);
+
+//     if (!isMatch) {
+//       logger.warn(`Login failed: incorrect password for ${email}`);
+//       return res.status(400).json({ message: 'Invalid credentials' });
+//     }
+
+//     if (!isMatch) {
+//       return res.status(400).json({ message: 'Invalid credentials' });
+//     }
+
+//     const { accessToken, refreshToken } = await generateToken(user.id, user.role);
+
+//     // ✅ Use your centralized cookie utility
+//     setCookie(res, "jwt", accessToken, { maxAge: 15 * 60 * 1000 }); // 15 min
+//     setCookie(res, "refreshToken", refreshToken, { maxAge: 7 * 24 * 60 * 60 * 1000 }); // 7 days
+
+//     // Log what cookies will be sent
+//     console.log("🍪 Set-Cookie headers:", res.getHeader("Set-Cookie"));
+
+
+//     logger.info(`User ${user.email} logged in successfully.`);
+
+    
+
+//     res.status(200).json({
+//       message: "Login successful",
+//       user: {
+//         id: user.id,
+//         username: user.username,
+//         email: user.email,
+//         profilePic: user.profilePic,
+//         verified: user.verified,
+//       },
+//     });
+
+//   } catch (error) {
+//     logger.error('Login error:', error);
+//     res.status(500).json({ message: 'Internal server error' });
+//   }
+// };
 
 export const checkGoogleUser = (req, res) => {
   if (!req.user) {
@@ -766,8 +819,8 @@ export const resetPassword = async (req, res) => {
 // ✅ Check Auth
 export const checkAuth = (req, res) => {
   try {
-    const { id, username, email, authProvider, profilePic, phone } = req.user;
-    res.status(200).json({ id, username, email, authProvider, profilePic, phone });
+    const { id, username, email, authProvider, profilePic, phone, role } = req.user;
+    res.status(200).json({ id, username, email, authProvider, profilePic, phone, role });
   } catch (error) {
     logger.error("Check auth error:", error);
     res.status(500).json({ message: "Internal server error" });
