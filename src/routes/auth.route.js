@@ -30,69 +30,61 @@ router.post('/get', checkGoogleUser)
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false  }));
 
 // Google OAuth Callback
-// Google OAuth Callback
+// Step 1: redirect user to Google
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email', 'openid'],
+  session: false
+}));
+
+// Step 2: handle callback from Google
 router.get('/google/callback', async (req, res, next) => {
   try {
     const user = await new Promise((resolve, reject) => {
       passport.authenticate('google', { session: false }, (err, user, info) => {
-        if (err) {
-          return reject(new Error('Authentication failed'));
-        }
-
-        if (!user) {
-          const message = info?.message || 'Google login failed.';
-          return reject(new Error(message));
-        }
-
+        if (err) return reject(err);
+        if (!user) return reject(new Error(info?.message || 'Google login failed.'));
         resolve(user);
       })(req, res, next);
     });
 
-    // ✅ Generate and set token
     await generateToken(user.id, user.role, res);
-
-    // ✅ Redirect after successful login
     return res.redirect(process.env.FRONTEND_URL);
   } catch (error) {
-    // ✅ Handle failure and redirect with error message
-    const message = encodeURIComponent(error.message || 'Something went wrong during login.');
-    return res.redirect(`${process.env.FRONTEND_URL}/login?error=${message}`);
+    return res.redirect(`${process.env.FRONTEND_URL}/login?error=${encodeURIComponent(error.message)}`);
   }
 });
 
 // Google OAuth Callback
-// router.get('/google/callback', (req, res, next) => {
-//   passport.authenticate('google', { session: false }, (err, user, info) => {
-//     if (err) {
-//       console.error('OAuth error:', err);
-//       const message = encodeURIComponent('Authentication failed.');
-//       console.log("Redirecting due to OAuth error...");
-//       console.log("Headers already sent?", res.headersSent); // ✅ Add this
-//       return res.redirect(`${process.env.FRONTEND_URL}/login?error=${message}`);
-//     }
+// router.get('/google/callback', async (req, res, next) => {
+//   try {
+//     const user = await new Promise((resolve, reject) => {
+//       passport.authenticate('google', { session: false }, (err, user, info) => {
+//         if (err) {
+//           return reject(new Error('Authentication failed'));
+//         }
 
-//     if (!user) {
-//       const errorMessage = encodeURIComponent(info?.message || 'Google login failed.');
-//       console.log("Redirecting due to missing user...");
-//       console.log("Headers already sent?", res.headersSent); // ✅ Add this
-//       return res.redirect(`${process.env.FRONTEND_URL}/login?error=${errorMessage}`);
-//     }
+//         if (!user) {
+//           const message = info?.message || 'Google login failed.';
+//           return reject(new Error(message));
+//         }
 
-//     try {
-//       // ✅ Only sets cookie (does NOT end response)
-//       generateToken(user.id, user.role, res);
+//         resolve(user);
+//       })(req, res, next);
+//     });
 
-//       console.log("Redirecting after successful token generation...");
-//       console.log("Headers already sent?", res.headersSent); // ✅ Add this
-//       return res.redirect(process.env.FRONTEND_URL);
-//     } catch (e) {
-//       const message = encodeURIComponent('Token generation failed.');
-//       console.log("Redirecting due to token generation error...");
-//       console.log("Headers already sent?", res.headersSent); // ✅ Add this
-//       return res.redirect(`${process.env.FRONTEND_URL}/login?error=${message}`);
-//     }
-//   })(req, res, next);
+//     // ✅ Generate and set token
+//     await generateToken(user.id, user.role, res);
+
+//     // ✅ Redirect after successful login
+//     return res.redirect(process.env.FRONTEND_URL);
+//   } catch (error) {
+//     // ✅ Handle failure and redirect with error message
+//     const message = encodeURIComponent(error.message || 'Something went wrong during login.');
+//     return res.redirect(`${process.env.FRONTEND_URL}/login?error=${message}`);
+//   }
 // });
+
+
 
 
 router.get('/google/logout', logoutGoogleUser)

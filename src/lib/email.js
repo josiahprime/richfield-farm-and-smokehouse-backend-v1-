@@ -1,31 +1,27 @@
 // emailService.js
-import SibApiV3Sdk from "sib-api-v3-sdk";
+import { Resend } from "resend";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// Setup Brevo API client
-const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const apiKey = defaultClient.authentications["api-key"];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-
-const SENDER_EMAIL = process.env.EMAIL_USER;
+const SENDER_EMAIL = process.env.EMAIL_USER;     // must be from your domain
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 // Helper to send transactional emails
 const sendEmail = async (to, subject, htmlContent) => {
   try {
-    await apiInstance.sendTransacEmail({
-      sender: { name: "Richfield", email: SENDER_EMAIL },
-      to: [{ email: to }],
+    const data = await resend.emails.send({
+      from: `Richfield <${SENDER_EMAIL}>`, // e.g. no-reply@richfield.site
+      to,
       subject,
-      htmlContent,
+      html: htmlContent,
     });
-    console.log(`✅ Email sent successfully to: ${to}`);
+
+    console.log(`✅ Email sent successfully to: ${to}`, data);
   } catch (err) {
-    console.error(`❌ Failed to send email to ${to}:`, err.response?.body || err.message);
+    console.error(`❌ Failed to send email to ${to}:`, err.message || err);
     throw new Error(`Failed to send email to ${to}`);
   }
 };
@@ -54,6 +50,7 @@ const emailWrapper = (title, bodyHtml) => `
 // ✅ Send verification email
 export const sendVerificationEmail = async (email, verificationToken) => {
   const verificationLink = `${FRONTEND_URL}/verify-email?token=${verificationToken}`;
+  console.log(verificationLink)
   const bodyHtml = `
     <p>Thank you for signing up! Please confirm your email address by clicking the button below:</p>
     <p style="text-align: center; margin: 30px 0;">
@@ -61,8 +58,6 @@ export const sendVerificationEmail = async (email, verificationToken) => {
     </p>
     <p>This link will expire in 24 hours.</p>
   `;
-  
-
   await sendEmail(email, "Verify Your Email", emailWrapper("Verify Your Email", bodyHtml));
 };
 
@@ -77,7 +72,6 @@ export const sendPasswordResetEmail = async (user, resetToken) => {
     </p>
     <p>If you did not request a password reset, please ignore this email.</p>
   `;
-  console.log(resetLink)
   await sendEmail(user.email, "Password Reset Request", emailWrapper("Password Reset Request", bodyHtml));
 };
 

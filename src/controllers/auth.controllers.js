@@ -83,7 +83,8 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 
 export const signup = async (req, res) => {
-  const { username, email, password, token} = req.body;
+  const { username, email, password, recaptchaToken: token } = req.body;
+  console.log(req.body)
 
   const secret = process.env.RECAPTCHA_BACKEND_SECRET 
 
@@ -95,12 +96,14 @@ export const signup = async (req, res) => {
 
   
   if (!data.success) {
+    console.log('recaptcha failed')
     return res.status(400).json({ message: 'reCAPTCHA verification failed.' });
   }
 
   
   const { error } = signupSchema.validate({ username, email, password });
   if (error) {
+    console.log('error in signup', error)
     return res.status(400).json({ message: error.details[0].message });
   }
 
@@ -108,6 +111,7 @@ export const signup = async (req, res) => {
 
   try {
     const existingUser = await prisma.user.findUnique({ where: { email } });
+    console.log('user from signup',existingUser)
 
     if (existingUser) {
       if (existingUser.verified) {
@@ -117,6 +121,7 @@ export const signup = async (req, res) => {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       if (existingUser.verificationTokenCreatedAt > oneDayAgo) {
+        console.log('verification email already sent check your inbox')
         return res.status(400).json({
           message: 'Verification email was already sent recently. Please check your inbox.',
         });
@@ -171,7 +176,7 @@ export const signup = async (req, res) => {
     await sendVerificationEmail(email, verificationToken);
 
     res.status(201).json({
-      message: 'User registered successfully. A verification email has been sent.',
+      message: "User registered successfully. A verification email has been sent.If you don't see it, please check your spam folder."
     });
   } catch (err) {
     console.error('Signup Error:', err);
