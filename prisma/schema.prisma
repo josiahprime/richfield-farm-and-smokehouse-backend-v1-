@@ -150,6 +150,12 @@ model DailyDeal {
   createdAt DateTime @default(now())
 }
 
+model DailyTaskTracker {
+  id               Int      @id @default(1)
+  lastDiscountRun  DateTime?
+}
+
+
 model Favorite {
   id String @id @default(uuid())
 

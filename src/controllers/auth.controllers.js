@@ -8,6 +8,7 @@ import { generateToken } from "../lib/utils.js";
 import rateLimit from "express-rate-limit";
 import Joi from "joi";
 import winston from "winston";
+import signupSchema from "../validations/signupValidation.js";
 import dotenv from "dotenv";
 import sharp from "sharp";
 import streamifier from 'streamifier';
@@ -26,12 +27,7 @@ import checkUserCount from "../lib/checkUserCount.js";
 dotenv.config();
 
 
-// === Joi Schemas ===
-const signupSchema = Joi.object({
-  username: Joi.string().min(3).required(),
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
-});
+
 
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -40,18 +36,13 @@ const loginSchema = Joi.object({
 
 const resetPasswordSchema = Joi.object({
   newPassword: Joi.string().min(8).max(64).required(),
-  token: Joi.string().required(),
+  token: Joi.string().length(64).required(), // 64 hex chars from crypto.randomBytes(32)
 });
 
 // const updateProfileSchema = Joi.object({
 //   profilePic: Joi.string().uri().required(),
 // });
 
-const updateProfileSchema = Joi.object({
-  profilePic: Joi.string()
-    .pattern(/^data:image\/(jpeg|png|gif|webp);base64,/)
-    .required()
-});
 
 // === Rate Limiters ===
 export const loginLimiter = rateLimit({
@@ -84,7 +75,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export const signup = async (req, res) => {
   const { username, email, password, recaptchaToken: token } = req.body;
-  console.log(req.body)
+  // console.log(req.body)
 
   const secret = process.env.RECAPTCHA_BACKEND_SECRET 
 
@@ -115,7 +106,10 @@ export const signup = async (req, res) => {
 
     if (existingUser) {
       if (existingUser.verified) {
-        return res.status(400).json({ message: 'User already exists and is verified.' });
+        return res.status(409).json({
+          message: 'You already have an account. Please log in instead.',
+          redirectTo: '/login'
+        });
       }
 
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -150,10 +144,6 @@ export const signup = async (req, res) => {
     const hashedPassword = await hashPassword(password);
 
     const userCount = await prisma.user.count(); // First user becomes admin
-
-    // const verificationToken = jwt.sign({ email }, process.env.JWT_SECRET, {
-    //   expiresIn: '24h',
-    // });
 
     const verificationToken = generateVerificationToken(email)
 
@@ -239,10 +229,8 @@ export const verifyEmailSignup = async (req, res) => {
 };
 
 
-
-
 export const login = async (req, res) => {
-  console.log("we reached login endpoint");
+  // console.log("we reached login endpoint");
 
   const { email, password } = req.body;
 
@@ -296,78 +284,97 @@ export const login = async (req, res) => {
   }
 };
 
-// export const login = async (req, res) => {
-//   console.log('we reached here')
-//   const { email, password } = req.body;
-//   // console.log(req.body)
 
-//   const { error } = loginSchema.validate({ email, password });
-//   if (error) return res.status(400).json({ message: error.details[0].message });
+export const googleAuth = async (req, res) => {
+  try {
+    const { googleToken } = req.body;
+    if (!googleToken) {
+      return res.status(400).json({ success: false, message: "Missing Google token" });
+    }
 
-//   try {
-//     // const user = await User.findOne({ email });
-//     const user = await prisma.user.findUnique({ where: { email } });
-//     console.log('user from login controller', user)
+    // ✅ Verify Google token (JWT) from GIS
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
 
-//     if (!user) {
-//       logger.warn(`Login failed: no user found for email ${email}`);
-//       return res.status(400).json({ message: 'Invalid credentials' });
-//     }
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
 
-//     if (!user) {
-//       return res.status(400).json({ message: 'Invalid credentials' });
-//     }
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Google account has no email" });
+    }
 
-//     if (!user.verified) {
-//       return res.status(403).json({ message: 'Please verify your email before logging in.' });
-//     }
+    // ✅ Check if user exists
+    let user = await prisma.user.findUnique({ where: { email } });
 
-//     if (!password || !user.password) {
-//       logger.error("Missing password or hash during login", { email });
-//       return res.status(400).json({ message: "Invalid credentials" });
-//     }
+    if (user) {
+      // ✅ User exists but signed up with password before
+      if (user.authProvider === "local") {
+        return res.status(400).json({
+          success: false,
+          message: "This email is registered with a password. Please log in normally."
+        });
+      }
 
-//     const isMatch = await comparePasswords(password, user.password);
+      // ✅ User exists but provider is not Google
+      if (user.authProvider !== "google") {
+        return res.status(400).json({
+          success: false,
+          message: `This email is registered using ${user.authProvider}. Please continue using that login method.`
+        });
+      }
 
-//     if (!isMatch) {
-//       logger.warn(`Login failed: incorrect password for ${email}`);
-//       return res.status(400).json({ message: 'Invalid credentials' });
-//     }
+      // ✅ User exists and provider is google → continue to token generation
+    } else {
+      // ✅ Create new Google user
+      const userCount = await prisma.user.count();
 
-//     if (!isMatch) {
-//       return res.status(400).json({ message: 'Invalid credentials' });
-//     }
+      user = await prisma.user.create({
+        data: {
+          username: name || email.split("@")[0],
+          email,
+          password: null,
+          role: userCount === 0 ? "admin" : "customer",
+          verified: true,
+          status: "active",
+          profilePic: picture,
+          googleId,
+          authProvider: "google",
+        },
+      });
+    }
 
-//     const { accessToken, refreshToken } = await generateToken(user.id, user.role);
 
-//     // ✅ Use your centralized cookie utility
-//     setCookie(res, "jwt", accessToken, { maxAge: 15 * 60 * 1000 }); // 15 min
-//     setCookie(res, "refreshToken", refreshToken, { maxAge: 7 * 24 * 60 * 60 * 1000 }); // 7 days
+    // ✅ Generate access + refresh tokens
+    const { accessToken, refreshToken } = await generateToken(user.id, user.role);
 
-//     // Log what cookies will be sent
-//     console.log("🍪 Set-Cookie headers:", res.getHeader("Set-Cookie"));
+    setCookie(res, "refreshToken", refreshToken, {
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
+    return res.status(200).json({
+      success: true,
+      message: "Google authentication successful",
+      accessToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        profilePic: user.profilePic,
+        verified: user.verified,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error("Google Auth Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Google authentication failed",
+    });
+  }
+};
 
-//     logger.info(`User ${user.email} logged in successfully.`);
-
-    
-
-//     res.status(200).json({
-//       message: "Login successful",
-//       user: {
-//         id: user.id,
-//         username: user.username,
-//         email: user.email,
-//         profilePic: user.profilePic,
-//         verified: user.verified,
-//       },
-//     });
-
-//   } catch (error) {
-//     logger.error('Login error:', error);
-//     res.status(500).json({ message: 'Internal server error' });
-//   }
-// };
 
 export const checkGoogleUser = (req, res) => {
   if (!req.user) {
@@ -509,65 +516,6 @@ export const setPassword = async (req, res) => {
 };
 
 
-
-// export const logout = async (req, res) => {
-//   try {
-//     const token = req.cookies.refreshToken;
-//     if (!token) {
-//       return res.status(400).json({ message: "No refresh token provided" });
-//     }
-
-//     // Decode token to identify the user
-//     let decoded;
-//     try {
-//       decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-//     } catch (err) {
-//       // Even if token expired or invalid, we’ll still clear cookies
-//       console.warn("⚠️ Invalid or expired refresh token during logout:", err.message);
-//       decoded = null;
-//     }
-
-//     // Remove the specific refresh token from DB if user exists
-//     if (decoded?.userId) {
-//       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-//       if (user && Array.isArray(user.refreshToken)) {
-//         const updatedTokens = user.refreshToken.filter(t => t !== token);
-
-//         await prisma.user.update({
-//           where: { id: user.id },
-//           data: { refreshToken: updatedTokens },
-//         });
-
-//         console.log("✅ Removed refresh token for user:", user.email);
-//       }
-//     }
-
-//     // Always clear both cookies
-//     res.clearCookie("jwt", {
-//       httpOnly: true,
-//       sameSite: "lax",
-//       secure: process.env.NODE_ENV !== "development",
-//       path: "/",
-//     });
-
-//     res.clearCookie("refreshToken", {
-//       httpOnly: true,
-//       sameSite: "lax",
-//       secure: process.env.NODE_ENV !== "development",
-//       path: "/",
-//     });
-
-//     return res.status(200).json({
-//       message: "Logged out successfully",
-//       logout: true,
-//     });
-
-//   } catch (error) {
-//     console.error("Logout error:", error);
-//     res.status(500).json({ message: "Internal server error" });
-//   }
-// };
-
 export const logout = async (req, res) => {
   try {
     const token = req.cookies.refreshToken;
@@ -594,19 +542,7 @@ export const logout = async (req, res) => {
     // Always clear cookies
     clearCookie(res, "jwt");
     clearCookie(res, "refreshToken");
-    // res.clearCookie("jwt", {
-    //   httpOnly: true,
-    //   sameSite: "lax",
-    //   secure: process.env.NODE_ENV !== "development",
-    //   path: "/",
-    // });
 
-    // res.clearCookie("refreshToken", {
-    //   httpOnly: true,
-    //   sameSite: "lax",
-    //   secure: process.env.NODE_ENV !== "development",
-    //   path: "/",
-    // });
 
     return res.status(200).json({
       message: "Logged out successfully",
@@ -750,19 +686,9 @@ export const requestPasswordReset = async (req, res) => {
         resetToken: hashedToken,
       },
     });
-    // user.resetToken = hashedToken;
-    // await user.save();
 
-    // IMPORTANT: Sign a JWT that includes the plain resetToken
     const token = generatePasswordResetToken(user.id, resetToken)
-    // console.log(`token after we encode it:`, token)
 
-    // Build the reset link using the JWT
-    // const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-
-    // console.log(resetLink)
-    // ❌ ISSUE: You previously called sendPasswordResetEmail(user, user.resetToken)
-    // **Fix:** Use the reset link:
     await sendPasswordResetEmail(user, token);
 
     logger.info(`Password reset link sent to ${email}`);

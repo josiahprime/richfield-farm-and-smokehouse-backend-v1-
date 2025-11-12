@@ -5,8 +5,9 @@ import session from 'express-session';  // Required for Passport sessions
 import compression from 'compression';
 import cors from 'cors';
 import http from 'http';
-import './cron/dailyDeals.js'; // this kicks off the cron scheduler
 import './cron/popularProducts.js'
+import './cron/expiredDiscountCleanup.js'
+import './cron/dailyDiscount.js'
 import { initSocket } from './socket.js'; // ✅
 import passport from 'passport';  // Import Passport
 import './lib/passport.js'; // Ensure Passport strategies are loaded
@@ -74,6 +75,12 @@ app.use(
   })
 );
 
+app.use((req, res, next) => {
+  console.log('Incoming request:', req.method, req.url);
+  next();
+});
+
+
 // Apply rate limiter to all /api routes
 // app.use('/api', apiLimiter);
 if (process.env.NODE_ENV === 'production') {
@@ -96,6 +103,7 @@ app.use('/api/cart', (req, res, next) => {
 }, cartRoutes);
 
 app.use('/api/messages', messageRoutes);
+
 app.use('/api/products',(req, res, next) => {
     console.log(`📢 Request received at /api/products: ${req.method} ${req.url}`);
     next();
@@ -167,7 +175,6 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 
-// psql -h localhost -p 5000 -U postgres
-// ALTER USER postgres WITH PASSWORD 'josiahs0$';
+
 
 

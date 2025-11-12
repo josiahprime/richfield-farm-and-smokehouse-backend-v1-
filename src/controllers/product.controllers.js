@@ -232,6 +232,7 @@ export const updateProduct = async (req, res) => {
             productId: product.id,
             url: newImg.url,
             index: newImg.index,
+            publicId: newImg.publicId,
           },
         });
       }
@@ -592,28 +593,125 @@ export const toggleFavorites = async (req, res) => {
 
 // GET /api/daily-deals
 export const fetchDailyDeals = async (req, res) => {
+  console.log("Fetching daily deals...");
+
   try {
     const now = new Date();
-    const deals = await prisma.dailyDeal.findMany({
+    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000); // +24h
+
+    // Fetch products with active discounts expiring within 24 hours
+    const products = await prisma.product.findMany({
       where: {
-        expiresAt: { gte: now },
-      },
-      include: {
-        product: {
-          include: {
-            images: true,
-            discount: true,
+        discount: {
+          is: {
+            startDate: { lte: now },
+            endDate: { gte: now, lte: tomorrow },
+            isActive: true,
           },
         },
       },
+      include: {
+        discount: true,
+        images: {
+          select: { url: true },
+        },
+      },
+      orderBy: {
+        discount: {
+          endDate: "asc",
+        },
+      },
+      take: 10,
     });
 
-    res.json({ dailyDeals: deals });
+    console.log(`Daily deals fetched: ${products.length}`);
+
+    // ✅ Transform data to match frontend type EXACTLY
+    const deals = products.map((p) => ({
+      id: p.id,
+      productName: p.productName,
+      description: p.description,
+      priceInKobo: p.priceInKobo,
+      unitType: p.unitType,
+      discount: {
+        value: p.discount.value,
+        type: p.discount.type,
+        label: p.discount.label,
+        startDate: p.discount.startDate,
+        endDate: p.discount.endDate,
+      },
+      images: p.images.map((img) => ({ url: img.url })),
+    }));
+
+    // console.log(deals)
+
+  res.status(200).json({ dailyDeals: deals });
   } catch (err) {
     console.error("❌ Error fetching daily deals:", err);
-    res.status(500).json({ error: "Internal server error" });
+    return { success: false, error: "Internal server error" };
   }
 };
+
+// GET /api/holiday-deals
+export const fetchHolidayDeals = async (req, res) => {
+  console.log("Fetching holiday deals...");
+
+  try {
+    const now = new Date();
+    const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59); // Dec 31st
+
+    // Fetch products with active HOLIDAY_SALE discount until Dec 31
+    const products = await prisma.product.findMany({
+      where: {
+        discount: {
+          is: {
+            startDate: { lte: now },
+            endDate: { gte: now, lte: endOfYear },
+            isActive: true,
+            label: "HOLIDAY_SALE_2025", // Or match the label used in your script
+          },
+        },
+      },
+      include: {
+        discount: true,
+        images: {
+          select: { url: true },
+        },
+      },
+      orderBy: {
+        discount: {
+          endDate: "asc",
+        },
+      },
+      take: 10, // optional, limit to 10
+    });
+
+    console.log(`Holiday deals fetched: ${products.length}`);
+
+    // Transform to frontend-friendly format
+    const deals = products.map((p) => ({
+      id: p.id,
+      productName: p.productName,
+      description: p.description,
+      priceInKobo: p.priceInKobo,
+      unitType: p.unitType,
+      discount: {
+        value: p.discount.value,
+        type: p.discount.type,
+        label: p.discount.label,
+        startDate: p.discount.startDate,
+        endDate: p.discount.endDate,
+      },
+      images: p.images.map((img) => ({ url: img.url })),
+    }));
+
+    res.status(200).json({ HolidayDeals: deals });
+  } catch (err) {
+    console.error("❌ Error fetching holiday deals:", err);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+};
+
 
 
 export const popularProducts = async (req, res) => {

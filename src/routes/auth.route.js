@@ -1,6 +1,6 @@
 import express from 'express';
 import passport from 'passport';  // Import passport
-import { checkAuth, login, logout, signup, updateProfile, requestPasswordReset, resetPassword, verifyEmailSignup, getToken, checkGoogleUser, logoutGoogleUser, fetchUser, refreshToken, verifySession } from '../controllers/auth.controllers.js';
+import { checkAuth, login, logout, signup, updateProfile, requestPasswordReset, resetPassword, verifyEmailSignup, getToken, checkGoogleUser, logoutGoogleUser, fetchUser, refreshToken, verifySession, googleAuth } from '../controllers/auth.controllers.js';
 import { signupLimiter, loginLimiter, resetPasswordLimiter } from '../controllers/auth.controllers.js';
 import { generateToken } from '../lib/utils.js';
 import { protectRoute } from '../middlewares/auth.middleware.js';
@@ -26,8 +26,10 @@ router.get('/check', protectRoute, checkAuth);
 router.get('/fetch', protectRoute, fetchUser);
 //route to get google user data
 router.post('/get', checkGoogleUser)
+
+router.post('/google-signup', googleAuth)
 // Google OAuth Login
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false  }));
+// router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false  }));
 
 // Google OAuth Callback
 // Step 1: redirect user to Google
