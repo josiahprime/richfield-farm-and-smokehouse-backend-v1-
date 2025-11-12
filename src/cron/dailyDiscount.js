@@ -13,6 +13,12 @@ const assignDailyDiscounts = async () => {
       where: { id: 1 }
     });
 
+    if (!tracker) {
+      await prisma.dailyTaskTracker.create({
+        data: { id: 1, lastDiscountRun: new Date(0) },
+      });
+    }
+
 
     if (tracker?.lastDiscountRun?.toISOString().slice(0, 10) === today) {
       console.log("✅ Daily discounts already assigned today. Skipping.");
