@@ -14,14 +14,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Update file
-        run: |
-          echo "Updated on $(date)" >> contributions.txt
-
-      - name: Commit changes
+      - name: Make random commits
         run: |
           git config user.name "josiahprime"
           git config user.email "choujiakimichi02@gmail.com"
-          git add contributions.txt
-          git commit -m "Daily update $(date)" || exit 0
+          
+          # Number of commits today (random 1-5)
+          COUNT=$(( RANDOM % 5 + 1 ))
+          
+          for i in $(seq 1 $COUNT); do
+            echo "Update $i for $(date)" >> contributions.txt
+            git add contributions.txt
+            git commit -m "Daily update $(date) - $i"
+          done
+          
           git push
