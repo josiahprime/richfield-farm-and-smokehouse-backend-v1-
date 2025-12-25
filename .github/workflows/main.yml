@@ -1,0 +1,21 @@
+name: Daily Commit
+
+on:
+  schedule:
+    - cron: '0 10 * * *'  # runs every day at 10:00 UTC
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update file
+        run: |
+          echo "Updated on $(date)" >> contributions.txt
+      - name: Commit changes
+        run: |
+          git config user.name "josiahprime"
+          git config user.email "choujiakimichi02@gmail.com"
+          git add contributions.txt
+          git commit -m "Daily update $(date)" || echo "No changes"
+          git push
